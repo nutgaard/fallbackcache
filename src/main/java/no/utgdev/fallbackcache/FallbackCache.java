@@ -16,7 +16,7 @@ public class FallbackCache<REQUESTTYPE, DATATYPE> {
     }
 
     public DATATYPE get(REQUESTTYPE request) {
-        CompletableFuture<DATATYPE> data = cache.computeIfAbsent(request, this::hentFraFetcher);
+        CompletableFuture<DATATYPE> data = cache.computeIfAbsent(request, this::getFromFetcher);
 
         if (data.isCompletedExceptionally()) {
             return fallback;
@@ -25,13 +25,20 @@ public class FallbackCache<REQUESTTYPE, DATATYPE> {
     }
 
     public void refresh(REQUESTTYPE request) {
-        final CompletableFuture<DATATYPE> newData = hentFraFetcher(request);
+        final CompletableFuture<DATATYPE> newData = getFromFetcher(request);
         newData.thenRun(() -> {
             cache.put(request, newData);
         });
     }
 
-    private CompletableFuture<DATATYPE> hentFraFetcher(final REQUESTTYPE request) {
+    public void fix() {
+        this.cache.entrySet()
+                .stream()
+                .filter((entry) -> entry.getValue().isCompletedExceptionally())
+                .forEach((entry) -> this.refresh(entry.getKey()));
+    }
+
+    private CompletableFuture<DATATYPE> getFromFetcher(final REQUESTTYPE request) {
         CompletableFuture<DATATYPE> data = new CompletableFuture<>();
 
         CompletableFuture.runAsync(() -> {

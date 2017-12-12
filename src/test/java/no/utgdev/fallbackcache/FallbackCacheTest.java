@@ -4,7 +4,6 @@ import no.utgdev.fallbackcache.domain.Kodeverk;
 import no.utgdev.fallbackcache.domain.KodeverkPorttype;
 import no.utgdev.fallbackcache.domain.KodeverkWSDefinition;
 import org.junit.jupiter.api.Test;
-import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import java.net.SocketTimeoutException;
@@ -21,7 +20,7 @@ import static org.mockito.internal.verification.VerificationModeFactory.times;
 public class FallbackCacheTest {
 
     @Test
-    public void farDummyKodeverkTilAStarteMed() throws InterruptedException, SocketTimeoutException {
+    public void dummyvalueBeforeInitialFetchIsComplete() throws InterruptedException, SocketTimeoutException {
         Kodeverk kodeverk = new Kodeverk();
         KodeverkWSDefinition pt = mock(KodeverkWSDefinition.class);
         when(pt.hentKodeverk(anyString())).then(delay(kodeverk, 100));
@@ -41,7 +40,7 @@ public class FallbackCacheTest {
     }
 
     @Test
-    public void farEkteKodeverkNarDetErKlart() throws InterruptedException, SocketTimeoutException {
+    public void realValueWhenInitialFetchIsComplete() throws InterruptedException, SocketTimeoutException {
         Kodeverk kodeverk = new Kodeverk();
         KodeverkWSDefinition pt = mock(KodeverkWSDefinition.class);
         when(pt.hentKodeverk(anyString())).then(delay(kodeverk, 100));
@@ -61,7 +60,7 @@ public class FallbackCacheTest {
     }
 
     @Test
-    public void girFallbackHvisHentingFeiler() throws InterruptedException, SocketTimeoutException {
+    public void fallbackIfInitialFetchFails() throws InterruptedException, SocketTimeoutException {
         KodeverkWSDefinition pt = mock(KodeverkWSDefinition.class);
         when(pt.hentKodeverk(anyString())).thenThrow(SocketTimeoutException.class);
         FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback());
@@ -80,7 +79,7 @@ public class FallbackCacheTest {
     }
 
     @Test
-    public void recoverEtterFeil() throws InterruptedException, SocketTimeoutException {
+    public void recoverFromInitalFail() throws InterruptedException, SocketTimeoutException {
         KodeverkWSDefinition pt = mock(KodeverkPorttype.class);
         when(pt.hentKodeverk(anyString()))
                 .thenThrow(SocketTimeoutException.class)
@@ -96,6 +95,7 @@ public class FallbackCacheTest {
         // Første request fikk Exception, så fortsatt fallback
         Kodeverk kodeverk2 = klient.get("land");
         klient.refresh("land");
+        Thread.sleep(100);
 
         // Andre request funka, så nå får vi data
         Kodeverk kodeverk3 = klient.get("land");
@@ -109,7 +109,7 @@ public class FallbackCacheTest {
     }
 
     @Test
-    public void beholderDataOfRefreshFeiler() throws InterruptedException, SocketTimeoutException {
+    public void retainDataIfRefreshFails() throws InterruptedException, SocketTimeoutException {
         KodeverkWSDefinition pt = mock(KodeverkPorttype.class);
         when(pt.hentKodeverk(anyString()))
                 .thenCallRealMethod()
@@ -140,7 +140,7 @@ public class FallbackCacheTest {
     }
 
     @Test
-    public void enRequestOmGangen() throws InterruptedException {
+    public void forceSingleRequest() throws InterruptedException {
         final int numberOfTries = 10;
         final CountDownLatch latch = new CountDownLatch(numberOfTries);
         final AtomicInteger currentActive = new AtomicInteger();
@@ -186,12 +186,52 @@ public class FallbackCacheTest {
         assertThat(isOk.get()).isTrue();
     }
 
+    @Test
+    public void fallbackUntilFixIsOk() throws InterruptedException, SocketTimeoutException {
+        KodeverkWSDefinition pt = mock(KodeverkPorttype.class);
+        when(pt.hentKodeverk(anyString()))
+                .thenCallRealMethod()
+                .thenThrow(SocketTimeoutException.class)
+                .thenCallRealMethod()
+                .thenCallRealMethod();
+
+        FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback());
+
+        // Warmup
+        klient.get("kjonn");
+        klient.get("applikasjon");
+        klient.get("land");
+        Thread.sleep(100);
+
+        // First request
+        Kodeverk kjonnKodeverk1 = klient.get("kjonn");
+        klient.get("kjonn");
+        klient.get("kjonn");
+        Kodeverk applikasjonKodeverk1 = klient.get("applikasjon");
+        Kodeverk applikasjonKodeverk2 = klient.get("applikasjon");
+        Kodeverk applikasjonKodeverk3 = klient.get("applikasjon");
+        Kodeverk landKodeverk1 = klient.get("land");
+        klient.get("land");
+        klient.get("land");
+
+        assertThat(kjonnKodeverk1.getClass()).isEqualTo(Kodeverk.class);
+        assertThat(applikasjonKodeverk1.getClass()).isEqualTo(Kodeverk.KodeverkFallback.class);
+        assertThat(applikasjonKodeverk2.getClass()).isEqualTo(Kodeverk.KodeverkFallback.class);
+        assertThat(applikasjonKodeverk3.getClass()).isEqualTo(Kodeverk.KodeverkFallback.class);
+        assertThat(landKodeverk1.getClass()).isEqualTo(Kodeverk.class);
+
+        klient.fix();
+        Thread.sleep(100);
+
+        Kodeverk applikasjonKodeverk4 = klient.get("applikasjon");
+        assertThat(applikasjonKodeverk4.getClass()).isEqualTo(Kodeverk.class);
+        verify(pt, times(4)).hentKodeverk(anyString());
+    }
+
     private Answer<Kodeverk> delay(final Kodeverk kodeverk, final long delay) {
-        return new Answer<Kodeverk>() {
-            public Kodeverk answer(InvocationOnMock invocationOnMock) throws Throwable {
-                Thread.sleep(delay);
-                return kodeverk;
-            }
+        return (invocationOnMock) -> {
+            Thread.sleep(delay);
+            return kodeverk;
         };
     }
 }
