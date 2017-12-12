@@ -1,9 +1,8 @@
-package no.utgdev.kodeverk.klient;
+package no.utgdev.fallbackcache;
 
-import no.utgdev.kodeverk.Klient;
-import no.utgdev.kodeverk.domain.Kodeverk;
-import no.utgdev.kodeverk.domain.KodeverkPorttype;
-import no.utgdev.kodeverk.domain.KodeverkWSDefinition;
+import no.utgdev.fallbackcache.domain.Kodeverk;
+import no.utgdev.fallbackcache.domain.KodeverkPorttype;
+import no.utgdev.fallbackcache.domain.KodeverkWSDefinition;
 import org.junit.jupiter.api.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -19,7 +18,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 import static org.mockito.internal.verification.VerificationModeFactory.times;
 
-public class SimpleTest {
+public class FallbackCacheTest {
 
     @Test
     public void farDummyKodeverkTilAStarteMed() throws InterruptedException, SocketTimeoutException {
@@ -27,11 +26,11 @@ public class SimpleTest {
         KodeverkWSDefinition pt = mock(KodeverkWSDefinition.class);
         when(pt.hentKodeverk(anyString())).then(delay(kodeverk, 100));
 
-        Klient klient = new Klient(pt);
+        FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback());
 
         // Begge kallene skjer før vi får data
-        Kodeverk kodeverk1 = klient.hentKodeverk("land");
-        Kodeverk kodeverk2 = klient.hentKodeverk("land");
+        Kodeverk kodeverk1 = klient.get("land");
+        Kodeverk kodeverk2 = klient.get("land");
 
         // Vi venter på at porttype skal kalles
         Thread.sleep(200);
@@ -46,15 +45,15 @@ public class SimpleTest {
         Kodeverk kodeverk = new Kodeverk();
         KodeverkWSDefinition pt = mock(KodeverkWSDefinition.class);
         when(pt.hentKodeverk(anyString())).then(delay(kodeverk, 100));
-        Klient klient = new Klient(pt);
+        FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback());
 
-        Kodeverk kodeverk1 = klient.hentKodeverk("land");
+        Kodeverk kodeverk1 = klient.get("land");
 
         Thread.sleep(200);
-        Kodeverk kodeverk2 = klient.hentKodeverk("land");
+        Kodeverk kodeverk2 = klient.get("land");
         // Ekstra kall fører ikke til kall mot porttype
-        klient.hentKodeverk("land");
-        klient.hentKodeverk("land");
+        klient.get("land");
+        klient.get("land");
 
         assertThat(kodeverk1.getClass()).isEqualTo(Kodeverk.KodeverkFallback.class);
         assertThat(kodeverk2.getClass()).isEqualTo(Kodeverk.class);
@@ -65,13 +64,13 @@ public class SimpleTest {
     public void girFallbackHvisHentingFeiler() throws InterruptedException, SocketTimeoutException {
         KodeverkWSDefinition pt = mock(KodeverkWSDefinition.class);
         when(pt.hentKodeverk(anyString())).thenThrow(SocketTimeoutException.class);
-        Klient klient = new Klient(pt);
+        FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback());
 
-        Kodeverk kodeverk1 = klient.hentKodeverk("land");
+        Kodeverk kodeverk1 = klient.get("land");
 
         // Ekstra kall her fører ikke til kall mot PortType
-        klient.hentKodeverk("land");
-        klient.hentKodeverk("land");
+        klient.get("land");
+        klient.get("land");
 
         // Vi venter på at porttype skal kalles
         Thread.sleep(100);
@@ -88,19 +87,18 @@ public class SimpleTest {
                 .thenCallRealMethod();
 
 
-        Klient klient = new Klient(pt);
+        FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback());
 
         // Initiell last (gir alltid fallback pga manglende data)
-        Kodeverk kodeverk1 = klient.hentKodeverk("land");
+        Kodeverk kodeverk1 = klient.get("land");
         Thread.sleep(100);
 
         // Første request fikk Exception, så fortsatt fallback
-        Kodeverk kodeverk2 = klient.hentKodeverk("land");
-        klient.refreshKodeverk("land");
-        Thread.sleep(100);
+        Kodeverk kodeverk2 = klient.get("land");
+        klient.refresh("land");
 
         // Andre request funka, så nå får vi data
-        Kodeverk kodeverk3 = klient.hentKodeverk("land");
+        Kodeverk kodeverk3 = klient.get("land");
 
         assertThat(kodeverk1.getClass()).isEqualTo(Kodeverk.KodeverkFallback.class);
         assertThat(kodeverk2.getClass()).isEqualTo(Kodeverk.KodeverkFallback.class);
@@ -117,20 +115,20 @@ public class SimpleTest {
                 .thenCallRealMethod()
                 .thenThrow(SocketTimeoutException.class);
 
-        Klient klient = new Klient(pt);
+        FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback());
 
         // Initiell last (gir alltid fallback pga manglende data)
-        Kodeverk kodeverk1 = klient.hentKodeverk("land");
+        Kodeverk kodeverk1 = klient.get("land");
         Thread.sleep(100);
 
         // Første request fikk ok, så nå har vi data
-        Kodeverk kodeverk2 = klient.hentKodeverk("land");
+        Kodeverk kodeverk2 = klient.get("land");
         // Refresh feiler
-        klient.refreshKodeverk("land");
+        klient.refresh("land");
         Thread.sleep(100);
 
         // Da refresh feiler så beholder vi data
-        Kodeverk kodeverk3 = klient.hentKodeverk("land");
+        Kodeverk kodeverk3 = klient.get("land");
         Thread.sleep(1000);
 
         assertThat(kodeverk1.getClass()).isEqualTo(Kodeverk.KodeverkFallback.class);
@@ -171,12 +169,12 @@ public class SimpleTest {
             }
         };
 
-        Klient klient = new Klient(pt);
+        FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback());
         ForkJoinPool pool = new ForkJoinPool(10);
         for (int i = 0; i < numberOfTries; i++) {
             final String id = String.valueOf(i);
             pool.submit(() -> {
-                klient.hentKodeverk(id);
+                klient.get(id);
             });
         }
 

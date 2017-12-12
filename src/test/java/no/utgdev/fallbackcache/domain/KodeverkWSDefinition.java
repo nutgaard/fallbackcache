@@ -1,4 +1,4 @@
-package no.utgdev.kodeverk.domain;
+package no.utgdev.fallbackcache.domain;
 
 import java.net.SocketTimeoutException;
 
