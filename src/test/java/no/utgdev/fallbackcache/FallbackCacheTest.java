@@ -5,6 +5,7 @@ import no.utgdev.fallbackcache.domain.KodeverkPorttype;
 import no.utgdev.fallbackcache.domain.KodeverkWSDefinition;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.Answer;
+import org.quartz.CronExpression;
 
 import java.net.SocketTimeoutException;
 import java.util.concurrent.CountDownLatch;
@@ -226,6 +227,23 @@ public class FallbackCacheTest {
         Kodeverk applikasjonKodeverk4 = klient.get("applikasjon");
         assertThat(applikasjonKodeverk4.getClass()).isEqualTo(Kodeverk.class);
         verify(pt, times(4)).hentKodeverk(anyString());
+    }
+
+    @Test
+    public void startsCron() throws Exception {
+        System.out.println("test test test");
+        KodeverkWSDefinition pt = mock(KodeverkPorttype.class);
+        when(pt.hentKodeverk(anyString()))
+                .thenThrow(SocketTimeoutException.class);
+
+        FallbackCache.Configuration config = new FallbackCache.Configuration(1, new CronExpression("*/2 * * * * ?"), null);
+
+        FallbackCache<String, Kodeverk> klient = new FallbackCache<>(pt::hentKodeverk, new Kodeverk.KodeverkFallback(), config);
+        klient.get("land");
+
+        Thread.sleep(1000);
+
+        verify(pt, times(2)).hentKodeverk(anyString());
     }
 
     private Answer<Kodeverk> delay(final Kodeverk kodeverk, final long delay) {
